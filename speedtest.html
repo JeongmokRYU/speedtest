@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>스테이지나인 인터넷 속도 측정</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Pretendard", "Apple SD Gothic Neo", sans-serif;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    color: #f1f5f9;
+  }
+  .container {
+    background: #1e293b;
+    border-radius: 24px;
+    padding: 48px 40px;
+    max-width: 560px;
+    width: 100%;
+    box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
+    border: 1px solid #334155;
+  }
+  .header {
+    text-align: center;
+    margin-bottom: 32px;
+  }
+  .header h1 {
+    font-size: 26px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    letter-spacing: -0.5px;
+  }
+  .header p {
+    color: #94a3b8;
+    font-size: 14px;
+  }
+  .branch-select {
+    width: 100%;
+    padding: 14px 16px;
+    margin-bottom: 24px;
+    border-radius: 12px;
+    border: 1px solid #334155;
+    background: #0f172a;
+    color: #f1f5f9;
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .branch-select:focus {
+    outline: none;
+    border-color: #3b82f6;
+  }
+  .btn-start {
+    width: 100%;
+    padding: 24px;
+    font-size: 20px;
+    font-weight: 700;
+    border: none;
+    border-radius: 16px;
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    color: white;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: -0.3px;
+  }
+  .btn-start:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 25px -5px rgba(59, 130, 246, 0.5);
+  }
+  .btn-start:disabled {
+    background: #475569;
+    cursor: not-allowed;
+  }
+  .status {
+    margin-top: 24px;
+    padding: 16px;
+    text-align: center;
+    background: #0f172a;
+    border-radius: 12px;
+    font-size: 14px;
+    color: #94a3b8;
+    min-height: 52px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .results {
+    margin-top: 24px;
+    display: none;
+    gap: 12px;
+    grid-template-columns: 1fr 1fr;
+  }
+  .results.show { display: grid; }
+  .metric {
+    background: #0f172a;
+    padding: 20px;
+    border-radius: 12px;
+    text-align: center;
+    border: 2px solid #334155;
+    transition: border-color 0.3s;
+  }
+  .metric.pass { border-color: #10b981; }
+  .metric.fail { border-color: #ef4444; }
+  .metric-label {
+    font-size: 12px;
+    color: #94a3b8;
+    margin-bottom: 8px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .metric-value {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -1px;
+  }
+  .metric-unit {
+    font-size: 13px;
+    color: #94a3b8;
+    margin-left: 4px;
+    font-weight: 500;
+  }
+  .metric.pass .metric-value { color: #10b981; }
+  .metric.fail .metric-value { color: #ef4444; }
+  .summary {
+    margin-top: 16px;
+    padding: 16px;
+    border-radius: 12px;
+    text-align: center;
+    font-weight: 600;
+    font-size: 15px;
+    display: none;
+  }
+  .summary.pass {
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+  }
+  .summary.fail {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+  }
+  .summary.show { display: block; }
+  .btn-alert {
+    display: none;
+    width: 100%;
+    margin-top: 12px;
+    padding: 14px;
+    background: #ef4444;
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-weight: 600;
+    font-size: 15px;
+    cursor: pointer;
+    text-decoration: none;
+    text-align: center;
+    font-family: inherit;
+  }
+  .btn-alert.show { display: block; }
+  .btn-alert:hover:not(:disabled) { background: #dc2626; }
+  .btn-alert:disabled { background: #64748b; cursor: not-allowed; opacity: 0.7; }
+  .meta {
+    margin-top: 16px;
+    text-align: center;
+    font-size: 12px;
+    color: #64748b;
+  }
+  .threshold-info {
+    text-align: center;
+    font-size: 12px;
+    color: #64748b;
+    margin-top: 12px;
+  }
+  .spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid #334155;
+    border-top-color: #3b82f6;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-right: 8px;
+    vertical-align: middle;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🌐 스테이지나인 인터넷 속도 측정</h1>
+      <p>원클릭 측정 · 권장속도 미달 시 아웃룩 알림</p>
+    </div>
+
+    <select class="branch-select" id="branch">
+      <option value="">지점을 선택하세요</option>
+      <option value="삼성점">삼성점</option>
+      <option value="하남미사점">하남미사점</option>
+      <option value="송도 센트로드점">송도 센트로드점</option>
+      <option value="송도 포스코타워점">송도 포스코타워점</option>
+      <option value="광주 금남점">광주 금남점</option>
+    </select>
+
+    <button class="btn-start" id="startBtn">측정 시작</button>
+
+    <div class="status" id="status">버튼을 눌러 측정을 시작하세요</div>
+
+    <div class="results" id="results">
+      <div class="metric" id="downloadMetric">
+        <div class="metric-label">다운로드</div>
+        <div class="metric-value"><span id="downloadValue">-</span><span class="metric-unit">Mbps</span></div>
+      </div>
+      <div class="metric" id="uploadMetric">
+        <div class="metric-label">업로드</div>
+        <div class="metric-value"><span id="uploadValue">-</span><span class="metric-unit">Mbps</span></div>
+      </div>
+      <div class="metric" id="pingMetric" style="grid-column: 1 / -1;">
+        <div class="metric-label">핑 (지연시간)</div>
+        <div class="metric-value"><span id="pingValue">-</span><span class="metric-unit">ms</span></div>
+      </div>
+    </div>
+
+    <div class="summary" id="summary"></div>
+    <button class="btn-alert" id="alertBtn" type="button">📧 아웃룩 미달 알림 원클릭 발송</button>
+
+    <div class="threshold-info">권장 기준: 다운로드 200Mbps / 업로드 200Mbps 이상</div>
+    <div class="meta" id="meta"></div>
+  </div>
+
+<script>
+const THRESHOLD_DOWN = 200;
+const THRESHOLD_UP = 200;
+const ALERT_EMAIL = 'matthew@stage9.co.kr';
+
+// EmailJS 설정 (매번 측정 완료 시 자동 발송)
+const EMAILJS_PUBLIC_KEY  = 'q-GAoFj6T7AgvTu1O';
+const EMAILJS_SERVICE_ID  = 'service_qgot8zt';
+const EMAILJS_TEMPLATE_ID = 'template_1b17pis';
+if (window.emailjs && typeof emailjs.init === 'function') {
+  try { emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY }); }
+  catch (e) { console.error('emailjs init 실패', e); }
+}
+
+async function sendAutoEmail(branch, down, up, ping, ts, passed) {
+  if (!window.emailjs || typeof emailjs.send !== 'function') {
+    console.warn('emailjs SDK 미로드 - 자동 발송 건너뜀');
+    return { ok: false, reason: 'SDK 미로드' };
+  }
+  const params = {
+    branch: branch,
+    timestamp: ts,
+    status: passed ? '정상' : '미달',
+    download: down.toFixed(1),
+    upload: up.toFixed(1),
+    ping: (ping == null ? '-' : String(ping)),
+    download_flag: down >= THRESHOLD_DOWN ? '✅' : '❌ (기준 ' + THRESHOLD_DOWN + ' Mbps 미달)',
+    upload_flag:   up   >= THRESHOLD_UP   ? '✅' : '❌ (기준 ' + THRESHOLD_UP   + ' Mbps 미달)',
+    action_note: passed
+      ? '정상 상태 — 조치 불필요'
+      : '권장속도 미달 — 시설팀 확인 및 조치 필요'
+  };
+  try {
+    const r = await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, params);
+    console.log('emailjs 발송 완료', r);
+    return { ok: true };
+  } catch (e) {
+    console.error('emailjs 발송 실패', e);
+    return { ok: false, reason: (e && (e.text || e.message)) || String(e) };
+  }
+}
+
+const startBtn = document.getElementById('startBtn');
+const statusEl = document.getElementById('status');
+const resultsEl = document.getElementById('results');
+const summaryEl = document.getElementById('summary');
+const alertBtn = document.getElementById('alertBtn');
+const metaEl = document.getElementById('meta');
+const branchSel = document.getElementById('branch');
+
+const errors = [];
+function logError(stage, err) {
+  console.error('[' + stage + ']', err);
+  errors.push(stage + ': ' + (err && err.message ? err.message : String(err)));
+}
+
+// 마지막 측정 결과 (원클릭 재발송용)
+let lastResult = null;
+
+function setStatus(text, loading = false) {
+  statusEl.innerHTML = loading ? `<span class="spinner"></span>${text}` : text;
+}
+
+// 핑 측정 (소규모 요청 반복)
+async function measurePing() {
+  const samples = [];
+  for (let i = 0; i < 5; i++) {
+    const t0 = performance.now();
+    try {
+      const r = await fetch('https://speed.cloudflare.com/__down?bytes=1000&t=' + Math.random(), { cache: 'no-store' });
+      await r.arrayBuffer();
+      samples.push(performance.now() - t0);
+    } catch (e) {
+      logError('ping', e);
+    }
+  }
+  if (samples.length === 0) return null;
+  samples.sort((a, b) => a - b);
+  return Math.round(samples[Math.floor(samples.length / 2)]);
+}
+
+// 스트리밍 다운로드 (진행률 업데이트 + 스트림 미지원시 arrayBuffer 폴백)
+async function downloadOnce(size) {
+  const url = 'https://speed.cloudflare.com/__down?bytes=' + size + '&t=' + Math.random();
+  const t0 = performance.now();
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  let received = 0;
+  if (res.body && res.body.getReader) {
+    const reader = res.body.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      received += value.length;
+      const sec = (performance.now() - t0) / 1000;
+      if (sec > 0.1) {
+        const mbps = (received * 8) / (sec * 1_000_000);
+        document.getElementById('downloadValue').textContent = mbps.toFixed(mbps < 10 ? 1 : 0);
+      }
+    }
+  } else {
+    const buf = await res.arrayBuffer();
+    received = buf.byteLength;
+  }
+  const elapsed = (performance.now() - t0) / 1000;
+  return (received * 8) / (elapsed * 1_000_000);
+}
+
+async function measureDownload() {
+  const sizes = [25_000_000, 50_000_000, 100_000_000];
+  let best = 0;
+  let ok = false;
+  for (const size of sizes) {
+    try {
+      const mbps = await downloadOnce(size);
+      ok = true;
+      if (mbps > best) best = mbps;
+      if (best > 50) break; // 충분한 샘플이면 조기 종료
+    } catch (e) {
+      logError('download(' + size + ')', e);
+    }
+  }
+  if (!ok) throw new Error('다운로드 측정 실패 — 네트워크 또는 CORS 문제');
+  return best;
+}
+
+// 업로드: Cloudflare __up (CORS-safe: text/plain Blob으로 프리플라이트 회피)
+async function uploadOnce(size, endpoint) {
+  const raw = new Uint8Array(size);
+  for (let i = 0; i < size; i += 4096) raw[i] = (Math.random() * 255) | 0;
+  // text/plain 은 CORS-safelisted Content-Type 이라 프리플라이트 OPTIONS 발생 안 함
+  const body = new Blob([raw], { type: 'text/plain' });
+  const t0 = performance.now();
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    body: body,
+    cache: 'no-store'
+  });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  // 응답 body 소비 (서버가 모두 수신했다고 가정)
+  try { await res.arrayBuffer(); } catch (_) {}
+  const elapsed = (performance.now() - t0) / 1000;
+  const mbps = (size * 8) / (elapsed * 1_000_000);
+  document.getElementById('uploadValue').textContent = mbps.toFixed(mbps < 10 ? 1 : 0);
+  return mbps;
+}
+
+async function measureUpload() {
+  // Cloudflare 기본, 실패시 LibreSpeed 공개 백엔드 폴백
+  const endpoints = [
+    'https://speed.cloudflare.com/__up',
+    'https://librespeed.org/backend/empty.php'
+  ];
+  const sizes = [2_000_000, 5_000_000, 10_000_000, 25_000_000];
+  let best = 0;
+  let ok = false;
+  for (const ep of endpoints) {
+    for (const size of sizes) {
+      try {
+        const mbps = await uploadOnce(size, ep);
+        ok = true;
+        if (mbps > best) best = mbps;
+        if (best > 50) return best;
+      } catch (e) {
+        logError('upload(' + ep.split('/')[2] + ',' + size + ')', e);
+      }
+    }
+    if (ok) break;
+  }
+  if (!ok) throw new Error('업로드 측정 실패 — 네트워크 또는 CORS 문제');
+  return best;
+}
+
+function applyResult(elId, value, threshold, suffix = '') {
+  const metric = document.getElementById(elId + 'Metric');
+  document.getElementById(elId + 'Value').textContent = value.toFixed(value < 10 ? 1 : 0);
+  if (threshold != null) {
+    metric.classList.remove('pass', 'fail');
+    metric.classList.add(value >= threshold ? 'pass' : 'fail');
+  }
+}
+
+function buildMailto(branch, down, up, ping, ts) {
+  const subject = `[인터넷 속도 미달 알림] ${branch} - ${ts}`;
+  const body =
+`스테이지나인 인터넷 속도 측정 결과 - 권장속도 미달
+
+■ 지점: ${branch}
+■ 측정일시: ${ts}
+
+■ 측정값
+  - 다운로드: ${down.toFixed(1)} Mbps ${down < THRESHOLD_DOWN ? '❌ (기준 ' + THRESHOLD_DOWN + ' 미달)' : '✅'}
+  - 업로드: ${up.toFixed(1)} Mbps ${up < THRESHOLD_UP ? '❌ (기준 ' + THRESHOLD_UP + ' 미달)' : '✅'}
+  - 핑: ${ping} ms
+
+■ 권장속도
+  - 다운로드 ${THRESHOLD_DOWN} Mbps / 업로드 ${THRESHOLD_UP} Mbps 이상
+
+시설팀 확인 및 조치 부탁드립니다.`;
+
+  return `mailto:${ALERT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
+startBtn.addEventListener('click', async () => {
+  const branch = branchSel.value;
+  if (!branch) {
+    alert('지점을 먼저 선택해주세요.');
+    return;
+  }
+
+  startBtn.disabled = true;
+  startBtn.textContent = '측정 중...';
+  summaryEl.classList.remove('show', 'pass', 'fail');
+  alertBtn.classList.remove('show');
+  resultsEl.classList.remove('show');
+  errors.length = 0;
+
+  // 초기화
+  ['download', 'upload', 'ping'].forEach(k => {
+    document.getElementById(k + 'Value').textContent = '-';
+    document.getElementById(k + 'Metric').classList.remove('pass', 'fail');
+  });
+
+  const started = new Date();
+  let ping = null, down = 0, up = 0;
+
+  try {
+    // 온라인 상태 및 테스트서버 연결성 프리체크
+    if (navigator.onLine === false) throw new Error('오프라인 상태입니다');
+    setStatus('서버 연결 확인 중...', true);
+    try {
+      const preflight = await fetch('https://speed.cloudflare.com/__down?bytes=1000&t=' + Math.random(), { cache: 'no-store' });
+      if (!preflight.ok) throw new Error('테스트 서버 응답 불량 (HTTP ' + preflight.status + ')');
+      await preflight.arrayBuffer();
+    } catch (e) {
+      throw new Error('테스트 서버 접근 실패 — 이 창이 Cowork 내장 미리보기라면 Chrome/Edge로 직접 열어주세요. (원인: ' + (e.message || e) + ')');
+    }
+
+    resultsEl.classList.add('show');
+
+    setStatus('핑 측정 중...', true);
+    ping = await measurePing();
+    if (ping != null) document.getElementById('pingValue').textContent = ping;
+
+    setStatus('다운로드 속도 측정 중...', true);
+    down = await measureDownload();
+    applyResult('download', down, THRESHOLD_DOWN);
+
+    setStatus('업로드 속도 측정 중...', true);
+    up = await measureUpload();
+    applyResult('upload', up, THRESHOLD_UP);
+  } catch (err) {
+    console.error(err);
+    summaryEl.classList.add('show', 'fail');
+    summaryEl.innerHTML = '❌ 측정 실패: ' + (err.message || err) +
+      (errors.length ? '<br><small style="opacity:.7">세부: ' + errors.slice(-3).join(' | ') + '</small>' : '') +
+      '<br><small style="opacity:.7">브라우저 콘솔(F12)에서 자세한 오류를 확인하세요</small>';
+    setStatus('측정 실패');
+    startBtn.disabled = false;
+    startBtn.textContent = '다시 측정';
+    return;
+  }
+
+  const ended = new Date();
+  const ts = ended.getFullYear() + '-' +
+             String(ended.getMonth() + 1).padStart(2, '0') + '-' +
+             String(ended.getDate()).padStart(2, '0') + ' ' +
+             String(ended.getHours()).padStart(2, '0') + ':' +
+             String(ended.getMinutes()).padStart(2, '0');
+
+  metaEl.textContent = `측정일시: ${ts} · 소요: ${((ended - started) / 1000).toFixed(1)}초 · 지점: ${branch}`;
+
+  const passed = down >= THRESHOLD_DOWN && up >= THRESHOLD_UP;
+
+  // 측정 결과 보관 (알림 재발송용)
+  lastResult = { branch, down, up, ping, ts, passed };
+
+  summaryEl.classList.add('show');
+  if (passed) {
+    summaryEl.classList.add('pass');
+    summaryEl.textContent = '✅ 권장속도 충족 - 정상';
+    setStatus('측정 완료 · 보고 메일 발송 중...', true);
+  } else {
+    summaryEl.classList.add('fail');
+    summaryEl.textContent = '⚠️ 권장속도 미달 - 자동 알림 메일 발송됩니다';
+    alertBtn.classList.add('show');
+    alertBtn.disabled = false;
+    alertBtn.textContent = '📧 아웃룩 미달 알림 원클릭 재발송';
+    setStatus('측정 완료 · 미달 알림 메일 발송 중...', true);
+  }
+
+  // EmailJS 자동 발송 (매번 발송)
+  const mail = await sendAutoEmail(branch, down, up, ping, ts, passed);
+  if (mail.ok) {
+    setStatus(passed ? '측정 완료 · 📧 보고 메일 발송 성공' : '측정 완료 (미달) · 📧 알림 메일 발송 성공');
+  } else {
+    setStatus('측정 완료 · ⚠️ 메일 자동발송 실패 — ' + (mail.reason || '알 수 없음'));
+  }
+
+  startBtn.disabled = false;
+  startBtn.textContent = '다시 측정';
+});
+
+// 알림 버튼 원클릭 재발송 (EmailJS)
+alertBtn.addEventListener('click', async () => {
+  if (!lastResult) {
+    alert('먼저 측정을 완료해주세요.');
+    return;
+  }
+  alertBtn.disabled = true;
+  const origText = alertBtn.textContent;
+  alertBtn.textContent = '📧 발송 중...';
+  const { branch, down, up, ping, ts, passed } = lastResult;
+  const r = await sendAutoEmail(branch, down, up, ping, ts, passed);
+  if (r.ok) {
+    alertBtn.textContent = '✅ 알림 메일 재발송 완료';
+    setStatus('📧 미달 알림 메일 재발송 성공 — matthew@stage9.co.kr, zzhaha@naver.com');
+    setTimeout(() => { alertBtn.textContent = origText; alertBtn.disabled = false; }, 3000);
+  } else {
+    alertBtn.textContent = '❌ 발송 실패 — 다시 시도';
+    setStatus('⚠️ 메일 발송 실패: ' + (r.reason || '알 수 없음'));
+    setTimeout(() => { alertBtn.disabled = false; }, 1000);
+  }
+});
+</script>
+</body>
+</html>
