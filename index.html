@@ -229,7 +229,7 @@
     </div>
 
     <div class="summary" id="summary"></div>
-    <button class="btn-alert" id="alertBtn" type="button">📧 아웃룩 미달 알림 원클릭 발송</button>
+    <button class="btn-alert" id="alertBtn" type="button">📧 아웃룩 미달 알림 원클릭 재발송</button>
 
     <div class="threshold-info">권장 기준: 다운로드 200Mbps / 업로드 200Mbps 이상</div>
     <div class="meta" id="meta"></div>
@@ -240,7 +240,11 @@ const THRESHOLD_DOWN = 200;
 const THRESHOLD_UP = 200;
 const ALERT_EMAIL = 'matthew@stage9.co.kr';
 
-// EmailJS 설정 (매번 측정 완료 시 자동 발송)
+// ── 수신자 목록 (콤마 구분) ──────────────────────────────
+const RECIPIENTS = 'matthew@stage9.co.kr,zzhaha@naver.com';
+// ────────────────────────────────────────────────────────
+
+// EmailJS 설정
 const EMAILJS_PUBLIC_KEY  = 'q-GAoFj6T7AgvTu1O';
 const EMAILJS_SERVICE_ID  = 'service_qgot8zt';
 const EMAILJS_TEMPLATE_ID = 'template_1b17pis';
@@ -255,6 +259,7 @@ async function sendAutoEmail(branch, down, up, ping, ts, passed) {
     return { ok: false, reason: 'SDK 미로드' };
   }
   const params = {
+    to_email: RECIPIENTS,
     branch: branch,
     timestamp: ts,
     status: passed ? '정상' : '미달',
@@ -291,14 +296,12 @@ function logError(stage, err) {
   errors.push(stage + ': ' + (err && err.message ? err.message : String(err)));
 }
 
-// 마지막 측정 결과 (원클릭 재발송용)
 let lastResult = null;
 
 function setStatus(text, loading = false) {
   statusEl.innerHTML = loading ? `<span class="spinner"></span>${text}` : text;
 }
 
-// 핑 측정 (소규모 요청 반복)
 async function measurePing() {
   const samples = [];
   for (let i = 0; i < 5; i++) {
@@ -316,7 +319,6 @@ async function measurePing() {
   return Math.round(samples[Math.floor(samples.length / 2)]);
 }
 
-// 스트리밍 다운로드 (진행률 업데이트 + 스트림 미지원시 arrayBuffer 폴백)
 async function downloadOnce(size) {
   const url = 'https://speed.cloudflare.com/__down?bytes=' + size + '&t=' + Math.random();
   const t0 = performance.now();
@@ -352,7 +354,7 @@ async function measureDownload() {
       const mbps = await downloadOnce(size);
       ok = true;
       if (mbps > best) best = mbps;
-      if (best > 50) break; // 충분한 샘플이면 조기 종료
+      if (best > 50) break;
     } catch (e) {
       logError('download(' + size + ')', e);
     }
@@ -361,11 +363,9 @@ async function measureDownload() {
   return best;
 }
 
-// 업로드: Cloudflare __up (CORS-safe: text/plain Blob으로 프리플라이트 회피)
 async function uploadOnce(size, endpoint) {
   const raw = new Uint8Array(size);
   for (let i = 0; i < size; i += 4096) raw[i] = (Math.random() * 255) | 0;
-  // text/plain 은 CORS-safelisted Content-Type 이라 프리플라이트 OPTIONS 발생 안 함
   const body = new Blob([raw], { type: 'text/plain' });
   const t0 = performance.now();
   const res = await fetch(endpoint, {
@@ -374,7 +374,6 @@ async function uploadOnce(size, endpoint) {
     cache: 'no-store'
   });
   if (!res.ok) throw new Error('HTTP ' + res.status);
-  // 응답 body 소비 (서버가 모두 수신했다고 가정)
   try { await res.arrayBuffer(); } catch (_) {}
   const elapsed = (performance.now() - t0) / 1000;
   const mbps = (size * 8) / (elapsed * 1_000_000);
@@ -383,7 +382,6 @@ async function uploadOnce(size, endpoint) {
 }
 
 async function measureUpload() {
-  // Cloudflare 기본, 실패시 LibreSpeed 공개 백엔드 폴백
   const endpoints = [
     'https://speed.cloudflare.com/__up',
     'https://librespeed.org/backend/empty.php'
@@ -408,7 +406,7 @@ async function measureUpload() {
   return best;
 }
 
-function applyResult(elId, value, threshold, suffix = '') {
+function applyResult(elId, value, threshold) {
   const metric = document.getElementById(elId + 'Metric');
   document.getElementById(elId + 'Value').textContent = value.toFixed(value < 10 ? 1 : 0);
   if (threshold != null) {
@@ -452,7 +450,6 @@ startBtn.addEventListener('click', async () => {
   resultsEl.classList.remove('show');
   errors.length = 0;
 
-  // 초기화
   ['download', 'upload', 'ping'].forEach(k => {
     document.getElementById(k + 'Value').textContent = '-';
     document.getElementById(k + 'Metric').classList.remove('pass', 'fail');
@@ -462,7 +459,6 @@ startBtn.addEventListener('click', async () => {
   let ping = null, down = 0, up = 0;
 
   try {
-    // 온라인 상태 및 테스트서버 연결성 프리체크
     if (navigator.onLine === false) throw new Error('오프라인 상태입니다');
     setStatus('서버 연결 확인 중...', true);
     try {
@@ -508,8 +504,6 @@ startBtn.addEventListener('click', async () => {
   metaEl.textContent = `측정일시: ${ts} · 소요: ${((ended - started) / 1000).toFixed(1)}초 · 지점: ${branch}`;
 
   const passed = down >= THRESHOLD_DOWN && up >= THRESHOLD_UP;
-
-  // 측정 결과 보관 (알림 재발송용)
   lastResult = { branch, down, up, ping, ts, passed };
 
   summaryEl.classList.add('show');
@@ -526,10 +520,11 @@ startBtn.addEventListener('click', async () => {
     setStatus('측정 완료 · 미달 알림 메일 발송 중...', true);
   }
 
-  // EmailJS 자동 발송 (매번 발송)
   const mail = await sendAutoEmail(branch, down, up, ping, ts, passed);
   if (mail.ok) {
-    setStatus(passed ? '측정 완료 · 📧 보고 메일 발송 성공' : '측정 완료 (미달) · 📧 알림 메일 발송 성공');
+    setStatus(passed
+      ? '측정 완료 · 📧 보고 메일 발송 성공 — matthew@stage9.co.kr, zzhaha@naver.com'
+      : '측정 완료 (미달) · 📧 알림 메일 발송 성공 — matthew@stage9.co.kr, zzhaha@naver.com');
   } else {
     setStatus('측정 완료 · ⚠️ 메일 자동발송 실패 — ' + (mail.reason || '알 수 없음'));
   }
@@ -538,7 +533,6 @@ startBtn.addEventListener('click', async () => {
   startBtn.textContent = '다시 측정';
 });
 
-// 알림 버튼 원클릭 재발송 (EmailJS)
 alertBtn.addEventListener('click', async () => {
   if (!lastResult) {
     alert('먼저 측정을 완료해주세요.');
